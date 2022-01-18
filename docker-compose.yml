@@ -1,0 +1,23 @@
+version: '3'
+services:
+  feature-flagger-api:
+    container_name: backend
+    build: 
+      context: .
+    ports: 
+      - 8080:8080
+    volumes:
+      - ./api:/app/api
+      - ./main.go:/app/main.go
+    command: reflex -r '\.go$$' -s -- sh -c "go build -o ./feature-flagger-api . && ./feature-flagger-api"
+    env_file:
+      - ./docker-compose.env
+
+  redis:
+    container_name: redis
+    hostname: redis
+    image: redis
+    ports:
+      - "6379:6379"
+    expose:
+      - "6379"
