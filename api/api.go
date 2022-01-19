@@ -36,13 +36,13 @@ func (api *FeatureFlaggerAPI) Initialize(redisHost string, redisPort string, red
 	api.redis = redisClient
 
 	// routes
-	apiRouter.HandleFunc("/health-check", healthCheck).Methods("GET")
-	apiRouter.HandleFunc("/features", listFeaturesHandler(api.redis)).Methods("GET")
-	apiRouter.HandleFunc("/features", createFeaturesHandler(api.redis)).Methods("POST")
+	apiRouter.HandleFunc("/health-check", healthCheck).Methods("GET", "OPTIONS")
+	apiRouter.HandleFunc("/features", listFeaturesHandler(api.redis)).Methods("GET", "OPTIONS")
+	apiRouter.HandleFunc("/features", createFeaturesHandler(api.redis)).Methods("POST", "OPTIONS")
 
-	apiRouter.HandleFunc("/features/{key}", getFeatureHandler(api.redis)).Methods("GET")
-	apiRouter.HandleFunc("/features/{key}", updateFeatureHandler(api.redis)).Methods("PUT")
-	apiRouter.HandleFunc("/features/{key}", deleteFeatureHandler(api.redis)).Methods("DELETE")
+	apiRouter.HandleFunc("/features/{key}", getFeatureHandler(api.redis)).Methods("GET", "OPTIONS")
+	apiRouter.HandleFunc("/features/{key}", updateFeatureHandler(api.redis)).Methods("PUT", "OPTIONS")
+	apiRouter.HandleFunc("/features/{key}", deleteFeatureHandler(api.redis)).Methods("DELETE", "OPTIONS")
 
 	api.router = router
 }
@@ -57,6 +57,10 @@ func (api *FeatureFlaggerAPI) Start(port string) {
 
 func listFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setupResponse(&w, r)
+		if (*r).Method == "OPTIONS" {
+			return
+		}
 		keys, err := redisDB.Keys("*").Result()
 		if err != nil {
 			log.Errorf("Error getting features from redis: %s\n", err)
@@ -64,7 +68,6 @@ func listFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 			w.Write([]byte("Error getting features: " + err.Error()))
 			return
 		}
-		log.Infof("%v", keys)
 		var features []Feature
 		for _, key := range keys {
 			enabled, err := redisDB.Get(key).Result()
@@ -77,8 +80,6 @@ func listFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 			}
 			keyVal := key
 			features = append(features, Feature{Name: &keyVal, Enabled: &enabledBool})
-			log.Infof("%+v", features)
-
 		}
 		featuresJSON, err := json.Marshal(features)
 		if err != nil {
@@ -94,6 +95,10 @@ func listFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 }
 func createFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setupResponse(&w, r)
+		if (*r).Method == "OPTIONS" {
+			return
+		}
 		// ready request body
 		var body Feature
 		err := json.NewDecoder(r.Body).Decode(&body)
@@ -110,12 +115,14 @@ func createFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 			w.Write([]byte("You must specify feature name."))
 			return
 		}
+		if body.Enabled == nil {
+			// default to false
+			*body.Enabled = false
+		}
 		// set feature in redis "featurename: enabled"
 		_, err = redisDB.Get(*body.Name).Result()
 		if err != nil && err == redis.Nil {
 			err = redisDB.Set(*body.Name, *body.Enabled, 0).Err()
-			log.Infof("%s", *body.Name)
-			log.Infof("%v", *body.Enabled)
 			if err != nil {
 				log.Errorf("Error adding feature to redis: %s\n", err)
 				w.WriteHeader(http.StatusInternalServerError)
@@ -141,6 +148,10 @@ func createFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 
 func getFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setupResponse(&w, r)
+		if (*r).Method == "OPTIONS" {
+			return
+		}
 		// get feature name to retrieve from url
 		key := mux.Vars(r)["key"]
 		enabled, err := redisDB.Get(key).Result()
@@ -175,10 +186,13 @@ func getFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 
 func updateFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setupResponse(&w, r)
+		if (*r).Method == "OPTIONS" {
+			return
+		}
 		// decode body
 		var body UpdateRequest
 		err := json.NewDecoder(r.Body).Decode(&body)
-		log.Infof("%+v", body)
 		if err != nil {
 			log.Errorf("Failed to decode request body\n")
 			w.WriteHeader(http.StatusBadRequest)
@@ -196,10 +210,17 @@ func updateFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 		key := mux.Vars(r)["key"]
 		enabled, err := redisDB.Get(key).Result()
 		if err != nil {
-			log.Errorf("Error getting feature from redis: %s\n", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Error getting feature: " + err.Error()))
-			return
+			if err == redis.Nil {
+				log.Errorf("No such feature found to update: %s\n", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Feature: '" + key + "' does not exist in the database. Please check the feature name and try again."))
+				return
+			} else {
+				log.Errorf("Error getting feature from redis: %s\n", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Error getting feature: " + err.Error()))
+				return
+			}
 		}
 		// compare if we need to actualy update or not
 		enabledBool := true
@@ -212,7 +233,7 @@ func updateFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 			return
 		}
 		//update
-		err = redisDB.Set(key, body.Enabled, 0).Err()
+		err = redisDB.Set(key, *body.Enabled, 0).Err()
 		if err != nil {
 			log.Errorf("Error updating feature in redis: %s\n", err)
 			w.WriteHeader(http.StatusInternalServerError)
@@ -226,6 +247,10 @@ func updateFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 
 func deleteFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		setupResponse(&w, r)
+		if (*r).Method == "OPTIONS" {
+			return
+		}
 		// get feature based on key
 		key := mux.Vars(r)["key"]
 		numDeleted, err := redisDB.Del(key).Result()
@@ -246,6 +271,16 @@ func deleteFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 }
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
+	setupResponse(&w, r)
+	if (*r).Method == "OPTIONS" {
+		return
+	}
 	w.WriteHeader(200)
 	w.Write([]byte("ok"))
+}
+
+func setupResponse(w *http.ResponseWriter, req *http.Request) {
+	(*w).Header().Set("Access-Control-Allow-Origin", "*")
+	(*w).Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+	(*w).Header().Set("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
 }
