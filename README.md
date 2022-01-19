@@ -151,7 +151,7 @@ Error adding feature: <error> .
 ---
 # Get Feature
 
-allows caller to see all features in database.
+allows caller to get a feature in database.
 
 **URL** : `/api/features/{featureName}`
 
