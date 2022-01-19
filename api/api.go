@@ -156,10 +156,17 @@ func getFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 		key := mux.Vars(r)["key"]
 		enabled, err := redisDB.Get(key).Result()
 		if err != nil {
-			log.Errorf("Error getting feature from redis: %s\n", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Error getting feature: " + err.Error()))
-			return
+			if err == redis.Nil {
+				log.Errorf("No such feature found to update: %s\n", err)
+				w.WriteHeader(http.StatusNotFound)
+				w.Write([]byte("Feature: '" + key + "' does not exist in the database. Please check the feature name and try again."))
+				return
+			} else {
+				log.Errorf("Error getting feature from redis: %s\n", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Error getting feature: " + err.Error()))
+				return
+			}
 		}
 		// covert bool to string
 		enabledBool := true
@@ -212,7 +219,7 @@ func updateFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 		if err != nil {
 			if err == redis.Nil {
 				log.Errorf("No such feature found to update: %s\n", err)
-				w.WriteHeader(http.StatusInternalServerError)
+				w.WriteHeader(http.StatusNotFound)
 				w.Write([]byte("Feature: '" + key + "' does not exist in the database. Please check the feature name and try again."))
 				return
 			} else {
@@ -266,7 +273,7 @@ func deleteFeatureHandler(redisDB *redis.Client) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Succesfully delted key: " + key))
+		w.Write([]byte("Succesfully deleted key: " + key))
 	}
 }
 
