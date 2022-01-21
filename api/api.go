@@ -111,7 +111,6 @@ func createFeaturesHandler(redisDB *redis.Client) http.HandlerFunc {
 		// if no feature name specifiged, return error
 		if body.Name == nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("You must specify feature name."))
 			return
 		}
