@@ -9,9 +9,9 @@ Feature Flagger API is a a bare bones feature flag api that currently only suppo
 - Fast Redis database to store your features
 
 ## Installation
-Dillinger requires [Go](https://go.dev/doc/install) v1.17+ to run.
+feature-flagger-api requires [Go](https://go.dev/doc/install) v1.17+ to run.
 
-Create an appropriate .env with these arguments, then start the server
+Create an appropriate .env with these arguments, then start the server. Currently supports hot-reloading
 
 ```
 # Values here are for a defualt local dev run
